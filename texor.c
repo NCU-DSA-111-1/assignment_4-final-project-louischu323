@@ -20,11 +20,14 @@
 
 /*** defines ***/
 
-#define TEXOR_VERSION "0.0.1"
+#define TEXOR_VERSION "0.0.2"
 #define TEXOR_TAB_STOP 8
 #define TEXOR_QUIT_TIMES 3
 
 #define CTRL_KEY(k) ((k) & 0x1f)
+
+int re_or_un = 1 ; // undo is 1. 
+int esc_or_enter = 0;
 
 enum editorKey {
   BACKSPACE = 127,
@@ -54,7 +57,7 @@ enum editorHighlight {
 #define HL_HIGHLIGHT_STRINGS (1<<1)
 
 enum functions {
-  NORMAL, DELETE, CUT, PASTE, UNDO, REDO, SEARCH, REPLACE
+  NORMAL, DELETE, CUT, PASTE, UNDO, REDO, SEARCH, REPLACE, GOTO
 };
 
 FILE *test=NULL;
@@ -768,6 +771,11 @@ void editorGoToCallback(char *query, int key) {
     //   direction = 1;
     // }
 
+    if(key == '\r'){
+      esc_or_enter = 0; //enter
+    }else if(key == '\x1b'){
+      esc_or_enter = 1; //esc
+    }
     // if (last_match == -1) direction = 1;
     // int current = last_match;
     // int i;
@@ -817,11 +825,18 @@ void editorGoTo() {
   int saved_coloff = E.column_offset;
   int saved_rowoff = E.row_offset;
 
-  char *query = editorPrompt("Go to (row column): %s (ESC/Enter)",
+  editorPrompt("Go to (row column): %s (ESC/Enter)",
                              editorGoToCallback);
   
   // free(query);
-  
+  if(esc_or_enter == 1){
+    E.file_position_x = saved_file_position_x;
+    E.file_position_y = saved_file_position_y;
+    E.column_offset = saved_coloff;
+    E.row_offset = saved_rowoff;
+    esc_or_enter = 0;
+  }
+
 }
 
 /*** append buffer ***/
@@ -1078,6 +1093,7 @@ void editorMoveCursor(int key) {
 
 void editorProcessKeypress() {
   FnNode *tmp;
+  erow *row = &E.row[E.file_position_y];
   tmp = (FnNode*)malloc(sizeof(FnNode));
   int x = 0, y = 0;
 
@@ -1105,13 +1121,13 @@ void editorProcessKeypress() {
     case CTRL_KEY('s'):
       editorSave();
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case HOME_KEY:
       E.file_position_x = 0;
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case END_KEY:
@@ -1119,13 +1135,13 @@ void editorProcessKeypress() {
         E.file_position_x = E.row[E.file_position_y].size;
       
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case CTRL_KEY('f'):
       editorFind();
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case BACKSPACE:
@@ -1134,7 +1150,7 @@ void editorProcessKeypress() {
       get_pos(&y, &x);
       
       tmp -> data.type= DELETE;
-      tmp -> data.content = c;
+      tmp -> data.content = row->characters[E.file_position_x - 1];
       tmp -> data.cursor_x = x;
       tmp -> data.cursor_y = y;
 
@@ -1149,7 +1165,7 @@ void editorProcessKeypress() {
       if (c == DEL_KEY) editorMoveCursor(ARROW_RIGHT);
       editorDelChar();
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case PAGE_UP:
@@ -1167,7 +1183,7 @@ void editorProcessKeypress() {
           editorMoveCursor(c == PAGE_UP? ARROW_UP : ARROW_DOWN);
       }
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case ARROW_UP:
@@ -1176,19 +1192,48 @@ void editorProcessKeypress() {
     case ARROW_RIGHT:
       editorMoveCursor(c);
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case CTRL_KEY('l'):
     case '\x1b':
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case CTRL_KEY('y'):
       if(head != NULL){
-        tmp = head;
-        head = head -> prev;
+        if(re_or_un == 1){
+          tmp = head->prev;
+          if(head->prev->prev != NULL){
+            head = head->prev->prev;
+            re_or_un = -1;
+          }
+          else{
+            head = head->prev;
+            re_or_un = -2;
+          }
+        }
+        else if(re_or_un == -1){
+          tmp = head;
+          if(head->prev != NULL){
+            head = head->prev;
+          }
+          else{
+            re_or_un = -2;
+          }
+        }
+        else if(re_or_un == 2){
+          re_or_un = -1;
+          tmp = head;
+          if(head->prev != NULL){
+            head = head->prev;
+          }
+          else{
+            re_or_un = -2;
+          }
+        }
+
         if (tmp -> data.type == NORMAL){
           fprintf(test, "get redo: %d;%d ", tmp -> data.cursor_y, tmp -> data.cursor_x);
           E.file_position_y = tmp -> data.cursor_y-1;
@@ -1197,15 +1242,57 @@ void editorProcessKeypress() {
           fprintf(test, "E.file: %d %d\n", E.file_position_y, E.file_position_x);
           editorInsertChar(c);
         }
+        //
+        else if (tmp -> data.type == DELETE){
+          fprintf(test, "get delete redo: %c;%d;%d ", tmp -> data.content, tmp->data.cursor_y, tmp->data.cursor_x);
+          E.file_position_y = tmp->data.cursor_y+1;
+          E.file_position_x = tmp->data.cursor_x;
+          c = tmp -> data.content;
+          // fprintf(test, "E.file: %d %d\n", E.file_position_y, E.file_position_x);
+          editorInsertChar(c);
+        }
+        //
       }
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case CTRL_KEY('z'):
       if(head != NULL){
-        tmp = head;
-        head = head -> next;
+        if(re_or_un == -1){
+          tmp = head->next;
+          if(head->next->next != NULL){
+            head = head->next->next;
+            re_or_un = 1;
+          }
+          else{
+            head = head->next;
+            re_or_un = 2;
+          }
+        }
+        else if(re_or_un == 1){
+          tmp = head;
+          if(head->next != NULL){
+            head = head->next;
+          }
+          else{
+            re_or_un = 2;
+          }
+        }
+        else if(re_or_un == -2){
+          re_or_un = 1;
+          tmp = head;
+          if(head->next != NULL){
+            head = head->next;
+          }
+          else{
+            re_or_un = 2;
+          }
+        }
+
+        if (tmp->data.cursor_x == 0 || tmp->data.cursor_y == 0){
+          break;
+        }
         if (tmp -> data.type == NORMAL){
           // fprintf(test, "get undo: %d;%d ", tmp->data.cursor_y, tmp->data.cursor_x);
           E.file_position_y = tmp->data.cursor_y-1;
@@ -1223,26 +1310,14 @@ void editorProcessKeypress() {
         }
       }
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     case CTRL_KEY('g'):
 
       editorGoTo();
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
-      // editorSetStatusMessage(
-      //     "Insert a place (row, column) to go to:");
-      //     //38
-      // E.file_position_y = 38 ;
-      // E.file_position_x = E.screen_columns  ;
-
-      // // int des_x, des_y;
-
-      // // scanf("%d %d", &des_y, &des_x);
-
-      // // E.file_position_y = des_y - 1 ;
-      // // E.file_position_x = des_x - 1 ;
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
 
     default:
@@ -1264,28 +1339,13 @@ void editorProcessKeypress() {
 
       editorInsertChar(c);
       editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
       break;
   }
 
   quit_times = TEXOR_QUIT_TIMES;
 }
 
-// void gotoaspecificplace(){
-//   int des_x, des_y;
-
-//   editorSetStatusMessage(
-//       "Insert a place (row, column) to go to:");
-//       //38
-//   E.file_position_y = 38 ;
-//   E.file_position_x = E.screen_columns ;
-
-//   scanf("%d %d", &des_y, &des_x);
-
-//   E.file_position_y = des_y - 1 ;
-//   E.file_position_x = des_x - 1 ;
-
-// }
 
 /*** init ***/
 
@@ -1363,8 +1423,11 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
+  // editorSetStatusMessage(
+  //     "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find | Ctrl-G = go to  | Ctrl-G = go to");
+
   editorSetStatusMessage(
-      "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-Z = undo | Ctrl-F = find");
+      "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
 
   while (1) {
     editorRefreshScreen();
