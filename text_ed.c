@@ -20,13 +20,13 @@
 
 /*** defines ***/
 
-#define TEXOR_VERSION "0.0.2"
+#define TEXOR_VERSION "0.1.0"
 #define TEXOR_TAB_STOP 8
 #define TEXOR_QUIT_TIMES 3
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
-int re_or_un = 1 ; // undo is 1. 
+int re_or_un = 1 ; // undo is 1, redo is -1;undo when empty is 2, redo when empty is -2 
 int esc_or_enter = 0;
 
 enum editorKey {
@@ -893,7 +893,7 @@ void editorDrawRows(struct abuf *ab) {
         char welcome[80];
 
         int welcomelen = snprintf(welcome, sizeof(welcome),
-            "Texor editor -- version %s", TEXOR_VERSION);
+            "Text editor -- version %s", TEXOR_VERSION);
         if (welcomelen > E.screen_columns) welcomelen = E.screen_columns;
         int padding = (E.screen_columns - welcomelen) / 2;
         if (padding) {
@@ -1234,24 +1234,28 @@ void editorProcessKeypress() {
           }
         }
 
+        if (tmp->data.cursor_x == 0 || tmp->data.cursor_y == 0){
+          break;
+        }
         if (tmp -> data.type == NORMAL){
           fprintf(test, "get redo: %d;%d ", tmp -> data.cursor_y, tmp -> data.cursor_x);
           E.file_position_y = tmp -> data.cursor_y-1;
-          E.file_position_x = tmp -> data.cursor_x-1;
+          E.file_position_x = tmp -> data.cursor_x;
           c = tmp -> data.content;
           fprintf(test, "E.file: %d %d\n", E.file_position_y, E.file_position_x);
           editorInsertChar(c);
+          E.file_position_y = tmp -> data.cursor_y-1;
+          E.file_position_x = tmp -> data.cursor_x;
         }
-        //
+        
         else if (tmp -> data.type == DELETE){
-          fprintf(test, "get delete redo: %c;%d;%d ", tmp -> data.content, tmp->data.cursor_y, tmp->data.cursor_x);
-          E.file_position_y = tmp->data.cursor_y+1;
-          E.file_position_x = tmp->data.cursor_x;
-          c = tmp -> data.content;
+          // fprintf(test, "get delete redo: %c;%d;%d ", tmp -> data.content, tmp->data.cursor_y, tmp->data.cursor_x);
+          E.file_position_y = tmp->data.cursor_y-1;
+          E.file_position_x = tmp->data.cursor_x-1;
+          // c = tmp -> data.content;
           // fprintf(test, "E.file: %d %d\n", E.file_position_y, E.file_position_x);
-          editorInsertChar(c);
+          editorDelChar();
         }
-        //
       }
       editorSetStatusMessage(
       "HELP: ^S = save | ^Q = quit | ^Z = undo | ^Y = redo | ^F = find | ^G = go to");
@@ -1303,7 +1307,7 @@ void editorProcessKeypress() {
         else if (tmp -> data.type == DELETE){
           fprintf(test, "get delete undo: %c;%d;%d ", tmp -> data.content, tmp->data.cursor_y, tmp->data.cursor_x);
           E.file_position_y = tmp->data.cursor_y-1;
-          E.file_position_x = tmp->data.cursor_x;
+          E.file_position_x = tmp->data.cursor_x-2;
           c = tmp -> data.content;
           // fprintf(test, "E.file: %d %d\n", E.file_position_y, E.file_position_x);
           editorInsertChar(c);
